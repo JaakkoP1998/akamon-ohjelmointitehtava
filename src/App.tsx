@@ -9,7 +9,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { faker } from '@faker-js/faker';
+//import { faker } from '@faker-js/faker';
 
 ChartJS.register(
   CategoryScale,
@@ -30,24 +30,6 @@ export const options = {
   },
 };
 
-// Päivän tunnit
-const labels = ['00:00', '01:00', '02:00', '03:00', '04:00', 
-  '05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
-'13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00',
-'22:00', '23:00'];
-
-// Tänne sähködata
-export const data = {
-  labels,
-  datasets: [
-    {
-      label: 'Hinnat snt/kWh',
-      data: labels.map(() => faker.number.int({min:0, max: 10})),
-      backgroundColor: 'rgba(255, 99, 132, 0.5)',
-    },
-  ],
-};
-
 // Pääapplikaatio
 function App() {
   const [average, setAverage] = useState(0);
@@ -55,6 +37,26 @@ function App() {
   const [priciest, setPriciest] = useState(0);
   const [cheapestHour, setCheapestHour] = useState("");
   const [priciestHour, setPriciestHour] = useState("");
+  // Tämä on vähän monimutkaisempi, että saadaan spottidata näkyviin.
+  // Chartjs dokumentaation mukaan labels on array string -elementeistä, 
+  // datasets on taas vähän monimutkaisempi tapaus...
+  const [chartData, setChartData] = useState<{ labels: string[]; datasets: any[] } | null>(null);
+
+  // Formatoidaan aikaleima haluttuun muotoon.
+  // Tässä ollaan käytetty apuna tekoälyä.
+  const formatTime = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    return date.toISOString().slice(11, 16); // Haetaan tunnit
+  };
+
+  // Interface, niin säästytään päänsäryltä.
+  // Helpoittaa Typescriptin tyyppimuunnoksia vähäisen.
+  interface spotData {
+    price: number;
+    timestamp: string;
+    unit: string;
+    deliveryArea: string;
+  }
 
   // Haetaan data fecthilla
   useEffect(() => {
@@ -63,7 +65,7 @@ function App() {
         const response = await fetch("/data/spot-data.json");
         if (!response.ok) throw new Error("Jotain meni pieleen");
 
-        const data = await response.json();
+        const data: spotData[] = await response.json();
         //Testaamista varten
         console.log(data);
 
@@ -81,19 +83,39 @@ function App() {
         setAverage(average * 0.1 * 1.255);
 
         //Hintoja vastaavat päivät
-        const highestDay = data.find((item: Object) => item.price === highest);
-        const lowestDay = data.find((item: Object) => item.price === lowest);
+        const highestDay = data.find(item  => item.price === highest);
+        const lowestDay = data.find(item => item.price === lowest);
 
-        // Formatoidaan aikaleima haluttuun muotoon.
-        // Tässä ollaan käytetty apuna tekoälyä.
-        const formatTime = (timestamp: string): string => {
-          const date = new Date(timestamp);
-          return date.toISOString().slice(11, 16); // Haetaan tunnit
-        };
+        // Jos jostain syystä ei löydetty päiviä, pidetään stringit tyjinä
+        setPriciestHour(highestDay ? formatTime(highestDay.timestamp) : "");
+        setCheapestHour(lowestDay ? formatTime(lowestDay.timestamp) : "");
+    
+        // Kerätään vain relavantti data taulukkoon
+        // Tällä hetkellä datassa ajat ovat jo järjestyksessä,
+        // joku sorttaus varmaan kannattaisi tehdä jos dataa ei olisi järjestetty.
+        const dataForChart = data.map(item =>({
+          time: formatTime(item.timestamp),
+          price: (item.price * 0.1 * 1.255),
+        }));
+        //console.log(dataForChart.map(row => row.price)); 
 
-        setPriciestHour(formatTime(highestDay.timestamp));
-        setCheapestHour(formatTime(lowestDay.timestamp));
+        const labels = dataForChart.map(row => row.time);
+        const chartPrices = dataForChart.map(row => row.price);
 
+        // Luodaan chartjs data,
+        // pitää pitää huoli että taulukkoa ei yritetä luoda ennen kun
+        // tämä on paikoillaan.
+        setChartData({
+          labels,
+          datasets: [
+            {
+              label: "snt/kWh",
+              data: chartPrices,
+              backgroundColor: "rgba(255, 99, 132, 0.5)",
+            },
+          ],
+        });
+       
       } catch (error) {
         console.error("Error:", error);
       }
@@ -120,7 +142,14 @@ function App() {
         <p>{average.toFixed(2)} snt/kWh</p>
       </div>
     </div>
-    <Bar options={options} data={data} />
+    {chartData ? (
+        <Bar
+          data={chartData}
+          options={options}
+        />
+      ) : (
+        <p>Ladataan...</p>
+      )}
   </div>
   );
 }
