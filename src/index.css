@@ -1,0 +1,10 @@
+.yhteenveto {
+    display: flex;
+}
+
+.harmaalaatikko {
+    background-color: rgb(189, 186, 186);
+    padding: 5px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
